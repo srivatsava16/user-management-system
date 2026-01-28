@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"time"
+	"user-management-system/internal/constants"
 	"user-management-system/internal/shared"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -46,7 +47,7 @@ func (j *JWTService) GenerateToken(userID int, email string, roles []string, bus
 		DivisionID:     divisionID,
 		JTI:            uuid.NewString(),
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(1 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(constants.AccessTokenExpiration) * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    "user-management-system"},
 	}

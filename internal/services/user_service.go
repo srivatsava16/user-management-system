@@ -24,6 +24,21 @@ func (s *UserService) CreateUser(req *models.User) (*models.User, error) {
 		return nil, fmt.Errorf("User request cannot be nil")
 	}
 
+	// Validate password strength
+	if err := shared.ValidatePasswordStrength(req.Password); err != nil {
+		return nil, fmt.Errorf("password validation failed: %w", err)
+	}
+
+	// Validate email format
+	if err := shared.ValidateEmail(req.Email); err != nil {
+		return nil, fmt.Errorf("email validation failed: %w", err)
+	}
+
+	// Validate username format
+	if err := shared.ValidateUsername(req.UserName); err != nil {
+		return nil, fmt.Errorf("username validation failed: %w", err)
+	}
+
 	hashedPassword, err := shared.HashPassword(req.Password)
 	if err != nil {
 		return nil, err
@@ -56,15 +71,43 @@ func (s *UserService) GetAllUsers() ([]models.User, error) {
 	return users, nil
 }
 
+func (s *UserService) GetAllUsersPaginated(page, pageSize int) ([]models.User, int64, error) {
+	return s.repo.GetAllUsersPaginated(page, pageSize)
+}
+
 func (s *UserService) UpdateUser(id int, req *models.User) (*models.User, error) {
 	if id == 0 || req == nil {
 		return nil, fmt.Errorf("Invalid input for updating User")
 	}
-	hashedPassword, err := shared.HashPassword(req.Password)
-	if err != nil {
-		return nil, err
+
+	// Only hash password if it's being changed (non-empty)
+	if req.Password != "" {
+		// Validate password strength
+		if err := shared.ValidatePasswordStrength(req.Password); err != nil {
+			return nil, fmt.Errorf("password validation failed: %w", err)
+		}
+
+		hashedPassword, err := shared.HashPassword(req.Password)
+		if err != nil {
+			return nil, err
+		}
+		req.Password = hashedPassword
 	}
-	req.Password = hashedPassword
+
+	// Validate email if provided
+	if req.Email != "" {
+		if err := shared.ValidateEmail(req.Email); err != nil {
+			return nil, fmt.Errorf("email validation failed: %w", err)
+		}
+	}
+
+	// Validate username if provided
+	if req.UserName != "" {
+		if err := shared.ValidateUsername(req.UserName); err != nil {
+			return nil, fmt.Errorf("username validation failed: %w", err)
+		}
+	}
+
 	user, err := s.repo.UpdateUser(id, req)
 	if err != nil {
 		return nil, err
@@ -149,9 +192,24 @@ func (s *UserService) ResetPassword(token, newPassword string) (int, error) {
 		return 0, errors.New("invalid or expired token")
 	}
 
+	// Check token expiration
+	if time.Now().After(resetToken.ExpiresAt) {
+		return 0, errors.New("token has expired")
+	}
+
+	// Check if token already used
+	if resetToken.Used {
+		return 0, errors.New("token has already been used")
+	}
+
 	user, err := s.repo.GetUserByEmail(resetToken.Email)
 	if err != nil {
 		return 0, errors.New("user not found")
+	}
+
+	// Validate password strength
+	if err := shared.ValidatePasswordStrength(newPassword); err != nil {
+		return 0, fmt.Errorf("password validation failed: %w", err)
 	}
 
 	hashedPassword, err := shared.HashPassword(newPassword)

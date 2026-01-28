@@ -2,17 +2,70 @@ package routes
 
 import (
 	"fmt"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+	"user-management-system/internal/constants"
 	"user-management-system/internal/controllers"
 	"user-management-system/internal/middleware"
 	"user-management-system/internal/repository"
 	"user-management-system/internal/services"
 	"user-management-system/pkg/database"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
 func SetupRoutes() *gin.Engine {
 	router := gin.Default()
+
+	// CORS Configuration
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:3000"
+	}
+
+	corsConfig := cors.Config{
+		AllowOrigins:     strings.Split(frontendURL, ","),
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}
+	router.Use(cors.New(corsConfig))
+
+	// Security Headers
+	router.Use(middleware.SecurityHeaders())
+
+	// Health Check Endpoint (no auth required)
+	router.GET("/health", func(ctx *gin.Context) {
+		// Check database connection
+		db := database.GetDB()
+		sqlDB, err := db.DB()
+		if err != nil {
+			ctx.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":   "unhealthy",
+				"database": "error",
+				"error":    err.Error(),
+			})
+			return
+		}
+
+		if err := sqlDB.Ping(); err != nil {
+			ctx.JSON(http.StatusServiceUnavailable, gin.H{
+				"status":   "unhealthy",
+				"database": "down",
+			})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{
+			"status":   "healthy",
+			"database": "connected",
+		})
+	})
 
 	db := database.GetDB()
 
@@ -48,15 +101,15 @@ func SetupRoutes() *gin.Engine {
 	approvalService := services.NewApprovalService(userRepo, divRepo, buRepo)
 	approvalController := controllers.NewApprovalController(approvalService, auditService)
 
-	auth := router.Group("/api/auth")
+	// API v1 routes
+	auth := router.Group("/api/v1/auth")
 	{
-		auth.POST("/login", authController.Login)
-		auth.POST("/forgot-password", authController.ForgotPassword)
+		auth.POST("/login", middleware.LoginRateLimiter(), authController.Login)
+		auth.POST("/forgot-password", middleware.PasswordResetRateLimiter(), authController.ForgotPassword)
 		auth.POST("/reset-password/:token", authController.ResetPassword)
-
 	}
 
-	api := router.Group("/api")
+	api := router.Group("/api/v1")
 
 	api.Use(middleware.RequireJWT(jwtService, tokenInvalidationService))
 	{
@@ -64,34 +117,34 @@ func SetupRoutes() *gin.Engine {
 
 		approvalRoutes := api.Group("/approvals")
 
-		approvalRoutes.Use(middleware.RequireRole("Super Admin", "BU Admin", "DV Admin"))
+		approvalRoutes.Use(middleware.RequireRole(constants.RoleSuperAdmin, constants.RoleBUAdmin, constants.RoleDVAdmin))
 		{
 			approvalRoutes.PUT("/approve", approvalController.ApproveEntity)
 			approvalRoutes.GET("/pending/:entity_type", approvalController.GetPendingEntities)
 		}
 
 		buRoutes := api.Group("/business-units")
-		buRoutes.Use(middleware.RequireRole("Super Admin"))
+		buRoutes.Use(middleware.RequireRole(constants.RoleSuperAdmin))
 		{
 			buRoutes.POST("", buController.CreateBusinessUnit)
 			buRoutes.PUT("/:id", buController.UpdateBusinessUnit)
 		}
-		api.GET("/business-units/:id", middleware.RequireRole("Super Admin", "BU Admin", "DV Admin"), buController.GetBusinessUnitByID)
-		api.GET("/business-units", middleware.RequireRole("Super Admin", "BU Admin", "DV Admin"), buController.GetAllBusinessUnits)
+		api.GET("/business-units/:id", middleware.RequireRole(constants.RoleSuperAdmin, constants.RoleBUAdmin, constants.RoleDVAdmin), buController.GetBusinessUnitByID)
+		api.GET("/business-units", middleware.RequireRole(constants.RoleSuperAdmin, constants.RoleBUAdmin, constants.RoleDVAdmin), buController.GetAllBusinessUnits)
 
 		divRoutes := api.Group("/divisions")
-		divRoutes.Use(middleware.RequireRole("Super Admin", "BU Admin"))
+		divRoutes.Use(middleware.RequireRole(constants.RoleSuperAdmin, constants.RoleBUAdmin))
 		{
 			divRoutes.POST("", divController.CreateDivision)
 			divRoutes.PUT("/:id", divController.UpdateDivision)
 		}
 
-		api.GET("/divisions/:id", middleware.RequireRole("Super Admin", "BU Admin", "DV Admin"), divController.GetDivisionByID)
-		api.GET("/divisions", middleware.RequireRole("Super Admin", "BU Admin", "DV Admin"), divController.GetAllDivisions)
-		api.GET("/business-units/:id/divisions", middleware.RequireRole("Super Admin", "BU Admin", "DV Admin"), divController.GetDivisionsByBusinessUnit)
+		api.GET("/divisions/:id", middleware.RequireRole(constants.RoleSuperAdmin, constants.RoleBUAdmin, constants.RoleDVAdmin), divController.GetDivisionByID)
+		api.GET("/divisions", middleware.RequireRole(constants.RoleSuperAdmin, constants.RoleBUAdmin, constants.RoleDVAdmin), divController.GetAllDivisions)
+		api.GET("/business-units/:id/divisions", middleware.RequireRole(constants.RoleSuperAdmin, constants.RoleBUAdmin, constants.RoleDVAdmin), divController.GetDivisionsByBusinessUnit)
 
 		roleRoutes := api.Group("/roles")
-		roleRoutes.Use(middleware.RequireRole("Super Admin", "BU Admin", "DV Admin"))
+		roleRoutes.Use(middleware.RequireRole(constants.RoleSuperAdmin, constants.RoleBUAdmin, constants.RoleDVAdmin))
 		{
 			roleRoutes.POST("", roleController.CreateRole)
 			roleRoutes.PUT("/:id", roleController.UpdateRole)
@@ -101,7 +154,7 @@ func SetupRoutes() *gin.Engine {
 		}
 
 		userRoutes := api.Group("/users")
-		userRoutes.Use(middleware.RequireRole("Super Admin", "BU Admin", "DV Admin"))
+		userRoutes.Use(middleware.RequireRole(constants.RoleSuperAdmin, constants.RoleBUAdmin, constants.RoleDVAdmin))
 		{
 			userRoutes.POST("", userController.CreateUser)
 			userRoutes.GET("/:id", userController.GetUserByID)

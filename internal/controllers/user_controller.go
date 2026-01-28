@@ -60,6 +60,30 @@ func (c *UserController) GetUserByID(ctx *gin.Context) {
 }
 
 func (c *UserController) GetAllUsers(ctx *gin.Context) {
+	// Check if pagination is requested
+	var pagination shared.PaginationRequest
+	if err := ctx.ShouldBindQuery(&pagination); err == nil && (pagination.Page > 0 || pagination.PageSize > 0) {
+		// Normalize pagination parameters
+		pagination = shared.NormalizePagination(pagination)
+
+		// Get paginated users
+		users, total, err := c.service.GetAllUsersPaginated(pagination.Page, pagination.PageSize)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Create paginated response
+		response := shared.PaginatedResult{
+			Data:       users,
+			Pagination: shared.CreatePaginationResponse(pagination.Page, pagination.PageSize, total),
+		}
+
+		ctx.JSON(http.StatusOK, response)
+		return
+	}
+
+	// Non-paginated request (for backward compatibility)
 	users, err := c.service.GetAllUsers()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

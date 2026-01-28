@@ -9,12 +9,12 @@ import (
 
 type User struct {
 	ID             int       `json:"id" gorm:"column:id;primaryKey;autoIncrement"`
-	FullName       string    `json:"full_name" gorm:"column:full_name;size:100;uniqueIndex"`
-	Email          string    `json:"email" gorm:"column:email;size:100;uniqueIndex"`
-	Password       string    `json:"password" gorm:"column:password"`
-	UserName       string    `json:"user_name" gorm:"column:user_name;size:100;uniqueIndex"`
-	BusinessUnitID int       `json:"business_unit_id" gorm:"column:business_unit_id"`
-	DivisionID     int       `json:"division_id" gorm:"column:division_id"`
+	FullName       string    `json:"full_name" gorm:"column:full_name;size:100;uniqueIndex" binding:"required,min=2,max=100"`
+	Email          string    `json:"email" gorm:"column:email;size:100;uniqueIndex" binding:"required,email,max=100"`
+	Password       string    `json:"password,omitempty" gorm:"column:password"`
+	UserName       string    `json:"user_name" gorm:"column:user_name;size:100;uniqueIndex" binding:"required,alphanum,min=3,max=50"`
+	BusinessUnitID int       `json:"business_unit_id" gorm:"column:business_unit_id" binding:"required,min=1"`
+	DivisionID     int       `json:"division_id" gorm:"column:division_id" binding:"required,min=1"`
 	IsActive       *bool     `json:"is_active" gorm:"column:is_active;default:false"`
 	RoleIds        IntArray  `json:"role_ids" gorm:"column:role_ids;type:json"`
 	CreatedBy      *string   `json:"created_by,omitempty" gorm:"column:created_by"`

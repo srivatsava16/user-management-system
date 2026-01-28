@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"user-management-system/internal/models"
+	"user-management-system/internal/shared"
 
 	"gorm.io/gorm"
 )
@@ -37,6 +38,24 @@ func (r *UserRepo) GetAllUsers() ([]models.User, error) {
 		return nil, err
 	}
 	return users, nil
+}
+
+func (r *UserRepo) GetAllUsersPaginated(page, pageSize int) ([]models.User, int64, error) {
+	var users []models.User
+	var total int64
+
+	// Count total records
+	if err := r.db.Model(&models.User{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	// Get paginated records
+	err := r.db.Scopes(shared.Paginate(page, pageSize)).Find(&users).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return users, total, nil
 }
 func (r *UserRepo) UpdateUser(id int, req *models.User) (*models.User, error) {
 	err := r.db.Omit("created_at", "created_by").Save(req).Error
